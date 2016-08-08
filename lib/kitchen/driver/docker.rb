@@ -19,6 +19,8 @@ require 'json'
 require 'securerandom'
 require 'uri'
 require 'net/ssh'
+require 'tempfile'
+require 'shellwords'
 require File.join(File.dirname(__FILE__), 'docker', 'erb')
 
 module Kitchen
@@ -51,6 +53,8 @@ module Kitchen
       default_config :wait_for_sshd, true
       default_config :private_key,   File.join(Dir.pwd, '.kitchen', 'docker_id_rsa')
       default_config :public_key,    File.join(Dir.pwd, '.kitchen', 'docker_id_rsa.pub')
+      default_config :build_options, nil
+      default_config :run_options,   nil
 
       default_config :use_sudo do |driver|
         !driver.remote_socket?
@@ -183,6 +187,7 @@ module Kitchen
           eos
           packages = <<-eos
             ENV DEBIAN_FRONTEND noninteractive
+            ENV container docker
             RUN apt-get update
             RUN apt-get install -y sudo openssh-server curl lsb-release
           eos
@@ -196,11 +201,15 @@ module Kitchen
             RUN ssh-keygen -t dsa -f /etc/ssh/ssh_host_dsa_key -N ''
           eos
         when 'arch'
+          # See https://bugs.archlinux.org/task/47052 for why we
+          # blank out limits.conf.
           <<-eos
-            RUN pacman -Syu --noconfirm
-            RUN pacman -S --noconfirm openssh sudo curl
+            RUN pacman --noconfirm -Sy archlinux-keyring
+            RUN pacman-db-upgrade
+            RUN pacman --noconfirm -Sy openssl openssh sudo curl
             RUN ssh-keygen -A -t rsa -f /etc/ssh/ssh_host_rsa_key
             RUN ssh-keygen -A -t dsa -f /etc/ssh/ssh_host_dsa_key
+            RUN echo >/etc/security/limits.conf
           eos
         when 'gentoo'
           <<-eos
@@ -231,10 +240,8 @@ module Kitchen
                 useradd -d #{homedir} -m -s /bin/bash #{username}; \
               fi
           RUN echo #{username}:#{password} | chpasswd
-          RUN echo '#{username} ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-          RUN mkdir -p /etc/sudoers.d
-          RUN echo '#{username} ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers.d/#{username}
-          RUN chmod 0440 /etc/sudoers.d/#{username}
+          RUN echo "#{username} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          RUN echo "Defaults !requiretty" >> /etc/sudoers
           RUN mkdir -p #{homedir}/.ssh
           RUN chown -R #{username} #{homedir}/.ssh
           RUN chmod 0700 #{homedir}/.ssh
@@ -246,7 +253,7 @@ module Kitchen
         Array(config[:provision_command]).each do |cmd|
           custom << "RUN #{cmd}\n"
         end
-        ssh_key = "RUN echo '#{public_key}' >> #{homedir}/.ssh/authorized_keys"
+        ssh_key = "RUN echo #{Shellwords.escape(public_key)} >> #{homedir}/.ssh/authorized_keys"
         # Empty string to ensure the file ends with a newline.
         [from, env_variables, platform, base, custom, ssh_key, ''].join("\n")
       end
@@ -268,19 +275,21 @@ module Kitchen
           end
         end
         raise ActionFailed,
-        'Could not parse Docker build output for image ID'
+          'Could not parse Docker build output for image ID'
       end
 
       def build_image(state)
         cmd = "build"
         cmd << " --no-cache" unless config[:use_cache]
+        extra_build_options = config_to_options(config[:build_options])
+        cmd << " #{extra_build_options}" unless extra_build_options.empty?
         dockerfile_contents = dockerfile
         build_context = config[:build_context] ? '.' : '-'
         file = Tempfile.new('Dockerfile-kitchen', Dir.pwd)
         output = begin
           file.write(dockerfile)
           file.close
-          docker_command("#{cmd} -f #{file.path} #{build_context}", :input => dockerfile_contents)
+          docker_command("#{cmd} -f #{Shellwords.escape(file.path)} #{build_context}", :input => dockerfile_contents)
         ensure
           file.close unless file.closed?
           file.unlink
@@ -317,6 +326,8 @@ module Kitchen
         Array(config[:cap_add]).each {|cap| cmd << " --cap-add=#{cap}"} if config[:cap_add]
         Array(config[:cap_drop]).each {|cap| cmd << " --cap-drop=#{cap}"} if config[:cap_drop]
         Array(config[:security_opt]).each {|opt| cmd << " --security-opt=#{opt}"} if config[:security_opt]
+        extra_run_options = config_to_options(config[:run_options])
+        cmd << " #{extra_run_options}" unless extra_run_options.empty?
         cmd << " #{image_id} #{config[:run_command]}"
         cmd
       end
@@ -333,11 +344,11 @@ module Kitchen
 
       def parse_container_ssh_port(output)
         begin
-          host, port = output.split(':')
+          _host, port = output.split(':')
           port.to_i
         rescue
           raise ActionFailed,
-          'Could not parse Docker port output for container SSH port'
+            'Could not parse Docker port output for container SSH port'
         end
       end
 
@@ -353,7 +364,7 @@ module Kitchen
 
       def rm_container(state)
         container_id = state[:container_id]
-        docker_command("stop #{container_id}")
+        docker_command("stop -t 0 #{container_id}")
         docker_command("rm #{container_id}")
       end
 
@@ -361,6 +372,26 @@ module Kitchen
         image_id = state[:image_id]
         docker_command("rmi #{image_id}")
       end
+
+      # Convert the config input for `:build_options` or `:run_options` in to a
+      # command line string for use with Docker.
+      #
+      # @since 2.5.0
+      # @param config [nil, String, Array, Hash] Config data to convert.
+      # @return [String]
+      def config_to_options(config)
+        case config
+        when nil
+          ''
+        when String
+          config
+        when Array
+          config.map {|c| config_to_options(c) }.join(' ')
+        when Hash
+          config.map {|k, v| Array(v).map {|c| "--#{k}=#{Shellwords.escape(c)}" }.join(' ') }.join(' ')
+        end
+      end
+
     end
   end
 end

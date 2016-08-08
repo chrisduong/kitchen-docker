@@ -1,4 +1,10 @@
-# Kitchen::Docker
+# Kitchen-Docker
+
+[![Build Status](https://img.shields.io/travis/test-kitchen/kitchen-docker.svg)](https://travis-ci.org/test-kitchen/kitchen-docker)
+[![Gem Version](https://img.shields.io/gem/v/kitchen-docker.svg)](https://rubygems.org/gems/kitchen-docker)
+[![Coverage](https://img.shields.io/codecov/c/github/test-kitchen/kitchen-docker.svg)](https://codecov.io/github/test-kitchen/kitchen-docker)
+[![Gemnasium](https://img.shields.io/gemnasium/test-kitchen/kitchen-docker.svg)](https://gemnasium.com/test-kitchen/kitchen-docker)
+[![License](https://img.shields.io/badge/license-Apache_2-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 A Test Kitchen Driver for Docker.
 
@@ -436,6 +442,40 @@ Examples:
   build_context: true
 ```
 
+### build_options
+
+Extra command-line options to pass to `docker build` when creating the image.
+
+Examples:
+
+```yaml
+  build_options: --rm=false
+```
+
+```yaml
+  build_options:
+    rm: false
+    build-arg: something
+```
+
+### run_options
+
+Extra command-line options to pass to `docker run` when starting the container.
+
+Examples:
+
+```yaml
+  run_options: --ip=1.2.3.4
+```
+
+```yaml
+  run_options:
+    tmpfs:
+    - /run/lock
+    - /tmp
+    net: br3
+```
+
 ## Development
 
 * Source hosted at [GitHub][repo]
@@ -451,24 +491,31 @@ example:
 4. Push to the branch (`git push origin my-new-feature`)
 5. Create new Pull Request
 
-## Authors
-
-Created and maintained by [Sean Porter][author] (<portertech@gmail.com>)
-
 ## License
 
-Apache 2.0 (see [LICENSE][license])
+Copyright 2013-2016, [Sean Porter](https://github.com/portertech)
+Copyright 2015-2016, [Noah Kantrowitz](https://github.com/coderanger)
 
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-[author]:                 https://github.com/portertech
-[issues]:                 https://github.com/portertech/kitchen-docker/issues
-[license]:                https://github.com/portertech/kitchen-docker/blob/master/LICENSE
-[repo]:                   https://github.com/portertech/kitchen-docker
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+[issues]:                 https://github.com/test-kitchen/kitchen-docker/issues
+[license]:                https://github.com/test-kitchen/kitchen-docker/blob/master/LICENSE
+[repo]:                   https://github.com/test-kitchen/kitchen-docker
 [docker_installation]:    https://docs.docker.com/installation/#installation
 [docker_upstart_issue]:   https://github.com/dotcloud/docker/issues/223
 [docker_index]:           https://index.docker.io/
 [docker_default_image]:   https://index.docker.io/_/base/
 [test_kitchen_docs]:      http://kitchen.ci/docs/getting-started/
-[chef_omnibus_dl]:        http://www.opscode.com/chef/install/
+[chef_omnibus_dl]:        https://downloads.chef.io/chef-client/
 [cpu_shares]:             https://docs.fedoraproject.org/en-US/Fedora/17/html/Resource_Management_Guide/sec-cpu.html
 [memory_limit]:           https://docs.fedoraproject.org/en-US/Fedora/17/html/Resource_Management_Guide/sec-memory.html
